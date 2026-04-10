@@ -4,13 +4,24 @@
     GSAToggle V1.0 PowerShell script.
 
 .DESCRIPTION
-    GSAToggle script helps Global Secure Access users to disable Private Access on Global Secure Access clinet when they connect to the corporate network(s), 
-    and enable Private Access when they disconnect from the corporate network(s) automatically without user interaction.
+    There are rare/corner cases where organizations using Global Secure Access (GSA) require the flexibility to bypass GSA for direct access to the Internet, Microsoft 365, and private applications when users are connected to the corporate network, while ensuring these same applications remain accessible through GSA when users are working remotely. 
+    Managing this transition, enabling or disabling the Global Secure Access Client based on the user's network location can be operationally complex. The GSAToggle script addresses this challenge by providing an automated solution that seamlessly manages GSA Client, ensuring uninterrupted connectivity regardless of whether users are inside or outside the corporate network.
+    [!WARNING]
+    Disabling GSA will disable all protections and capabilities provided by Global Secure Access, including security policies, Conditional Access integration, and traffic forwarding profiles. Organizations should carefully evaluate this trade-off before deploying this solution.
     For more info, visit: https://github.com/mzmaili/GSAToggle
 
-.Note
-    Before running the script, make sure to update "<Enter your Corp Network Name Here>" value of $CorpNetworkName parameter with your network(s).
-    If you have multiple networks, add a comma (,) between each network name like "CorpNetwork1,CorpNetwork2,CorpNetwork3". Otherwise, add a single network name like "OneCorpNetwork".
+.NOTES
+    Before running the script, configure at least one of the following detection methods:
+    1. $CorpNetworkName - Set to your corporate network name(s). Use a comma (,) to separate multiple names, e.g. "CorpNetwork1,CorpNetwork2,CorpNetwork3".
+    2. $CorpPublicIP - Set to your corporate public IP address(es). Use a comma (,) to separate multiple IPs, e.g. "203.0.113.1,198.51.100.1".
+    You can use either method or both together.
+
+.PARAMETER CorpNetworkName
+    The name(s) of the corporate network(s) to match against. Use a comma to separate multiple names, e.g. "CorpNetwork1,CorpNetwork2,CorpNetwork3".
+
+.PARAMETER CorpPublicIP
+    The public IP address(es) of the corporate network to match against. Use a comma to separate multiple IPs, e.g. "203.0.113.1,198.51.100.1".
+    Note: This method requires outbound access to https://api.ipify.org to resolve the machine's public IP.
 
 .AUTHOR:
     Mohammad Zmaili
@@ -21,13 +32,39 @@
 #>
 
 
-Function CreateGSAToggleTask($CorpNetworkName){
+Function CreateGSAToggleTask($CorpNetworkName, $CorpPublicIP){
     
     # PowerShell script
-    $PSScript = "`$CorpNetworks = '"+$CorpNetworkName+"' -split ',';`$NetworkName = if ((Get-WinEvent -FilterHashtable @{Logname='Microsoft-Windows-NetworkProfile/Operational';Id=10000} -MaxEvents 1).message -match 'Name:\s*(.+)') { `$matches[1].Trim() } else { `$null };foreach (`$CorpNetwork in `$CorpNetworks){If (`$NetworkName -eq `$CorpNetwork){Start-Service GlobalSecureAccessTunnelingService;Start-Service GlobalSecureAccessEngineService;exit}}Stop-Service GlobalSecureAccessTunnelingService -force"
+    $PSScript = @"
+`$IsCorpNetwork = `$false
+if ('$CorpNetworkName' -ne '') {
+    `$CorpNetworks = '$CorpNetworkName' -split ','
+    `$NetworkName = if ((Get-WinEvent -FilterHashtable @{Logname='Microsoft-Windows-NetworkProfile/Operational';Id=10000} -MaxEvents 1).message -match 'Name:\s*(.+)') { `$matches[1].Trim() } else { `$null }
+    foreach (`$CorpNetwork in `$CorpNetworks) {
+        if (`$NetworkName -eq `$CorpNetwork) {
+            `$IsCorpNetwork = `$true
+            break
+        }
+    }
+}
+if (-not `$IsCorpNetwork -and '$CorpPublicIP' -ne '') {
+    `$CorpIPs = '$CorpPublicIP' -split ','
+    try { `$PublicIP = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=text' -TimeoutSec 10).Trim() } catch { `$PublicIP = `$null }
+    if (`$PublicIP -and `$CorpIPs -contains `$PublicIP) {
+        `$IsCorpNetwork = `$true
+    }
+}
+if (`$IsCorpNetwork) {
+    Stop-Service GlobalSecureAccessTunnelingService -force
+    exit
+}
+Start-Service GlobalSecureAccessTunnelingService
+Start-Service GlobalSecureAccessEngineService
+"@
 
     # Define the task action
-    $arg = '-NoProfile -ExecutionPolicy Bypass -Command "&{' + $PSScript + '}"'
+    $EncodedScript = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($PSScript))
+    $arg = '-NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + $EncodedScript
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arg
 
     #Trigger on event id 10000
@@ -37,11 +74,12 @@ Function CreateGSAToggleTask($CorpNetworkName){
     <QueryList><Query Id="0" Path="Microsoft-Windows-NetworkProfile/Operational"><Select Path="Microsoft-Windows-NetworkProfile/Operational">*[System[Provider[@Name='Microsoft-Windows-NetworkProfile'] and EventID=10000]]</Select></Query></QueryList>
 "@
     $Trigger.Enabled = $True
+    $Trigger.Delay = "PT5S"
 
     #Set task principal
     $Prin = New-ScheduledTaskPrincipal -GroupId "SYSTEM"
 
-    #Stop task if runs more than 60 minutes
+    #Stop task if runs more than one minute
     $Timeout = (New-TimeSpan -Seconds 60)
 
     #Set name of task
@@ -58,7 +96,8 @@ Function CreateGSAToggleTask($CorpNetworkName){
 
 }
 
+# Before running the script, configure at least one of the following detection methods:
+$CorpNetworkName = "" # Example "OneCorpNetwork" OR "CorpNetwork1,CorpNetwork2,CorpNetwork3"
+$CorpPublicIP = "" # Example "203.0.113.1" OR "203.0.113.1,198.51.100.1"
 
-$CorpNetworkName = "<Enter your Corp Network Name Here>" # Example "OneCorpNetwork" OR "CorpNetwork1,CorpNetwork2,CorpNetwork3"
-
-CreateGSAToggleTask $CorpNetworkName
+CreateGSAToggleTask $CorpNetworkName $CorpPublicIP
