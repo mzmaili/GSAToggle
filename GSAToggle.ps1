@@ -21,7 +21,7 @@
 
 .PARAMETER CorpPublicIP
     The public IP address(es) of the corporate network to match against. Use a comma to separate multiple IPs, e.g. "203.0.113.1,198.51.100.1".
-    Note: This method requires outbound access to https://api.ipify.org to resolve the machine's public IP.
+    Note: This method requires outbound access to http://api.ipify.org to resolve the machine's public IP.
 
 .AUTHOR:
     Mohammad Zmaili
@@ -49,7 +49,7 @@ if ('$CorpNetworkName' -ne '') {
 }
 if (-not `$IsCorpNetwork -and '$CorpPublicIP' -ne '') {
     `$CorpIPs = '$CorpPublicIP' -split ','
-    try { `$PublicIP = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=text' -TimeoutSec 10).Trim() } catch { `$PublicIP = `$null }
+    try { `$PublicIP = (Invoke-RestMethod -Uri 'http://api.ipify.org?format=text' -TimeoutSec 10).Trim() } catch { `$PublicIP = `$null }
     if (`$PublicIP -and `$CorpIPs -contains `$PublicIP) {
         `$IsCorpNetwork = `$true
     }

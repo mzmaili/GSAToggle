@@ -1,7 +1,9 @@
 # GSAToggle
+
 The **GSAToggle** script automates the management of the **Global Secure Access (GSA) Client** based on network location. When a device connects to the corporate network, GSA Client is automatically disabled to allow direct access to resources. When the device disconnects from the corporate network, GSA Client is automatically re-enabled to maintain secure remote connectivity — all without user intervention.
 
 # What challenge GSAToggle solves
+
 There are scenarios where organizations using Global Secure Access require the flexibility to bypass GSA for direct access to the Internet, Microsoft 365, and private applications when users are on the corporate network, while ensuring traffic is routed through GSA when users are working remotely. Managing this transition manually is operationally complex and error-prone. The **GSAToggle** script addresses this challenge by providing an automated, event-driven solution that toggles GSA Client based on network connectivity.
 
 > [!WARNING]
@@ -24,7 +26,7 @@ Upon triggering, the task waits 5 seconds to allow the event to fully propagate,
 | Method | Parameter | Description |
 | --- | --- | --- |
 | **Network name** | `$CorpNetworkName` | Matches the connected network name from the Event 10000 log entry against a configured list of corporate network names. |
-| **Public IP** | `$CorpPublicIP` | Resolves the device's public IP via `https://api.ipify.org` and compares it against a configured list of corporate public IP addresses. |
+| **Public IP** | `$CorpPublicIP` | Resolves the device's public IP via `http://api.ipify.org` and compares it against a configured list of corporate public IP addresses. |
 
 Configure at least one method. Both can be used together — the network name is checked first, and the public IP check runs only if the name does not match.
 
@@ -39,7 +41,7 @@ Configure at least one method. Both can be used together — the network name is
 
 - Global Secure Access Client must be installed on the device.
 - The script must be executed with **Administrator** privileges (the scheduled task runs as SYSTEM).
-- If using the public IP detection method, outbound HTTPS access to `https://api.ipify.org` must be allowed.
+- If using the public IP detection method, outbound HTTPS access to `http://api.ipify.org` must be allowed.
 - Intune license, if deploying the script via Microsoft Intune.
 
 ## How to use the script
