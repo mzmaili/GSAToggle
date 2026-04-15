@@ -1,7 +1,7 @@
 ﻿<#
 
 .SYNOPSIS
-    GSAToggle V1.0 PowerShell script.
+    GSAToggle V2.0 PowerShell script.
 
 .DESCRIPTION
     There are rare/corner cases where organizations using Global Secure Access (GSA) require the flexibility to bypass GSA for direct access to the Internet, Microsoft 365, and private applications when users are connected to the corporate network, while ensuring these same applications remain accessible through GSA when users are working remotely. 
@@ -21,7 +21,7 @@
 
 .PARAMETER CorpPublicIP
     The public IP address(es) of the corporate network to match against. Use a comma to separate multiple IPs, e.g. "203.0.113.1,198.51.100.1".
-    Note: This method requires outbound access to http://api.ipify.org to resolve the machine's public IP.
+    Note: This method requires outbound access to https://ifconfig.me/ip to resolve the machine's public IP.
 
 .AUTHOR:
     Mohammad Zmaili
@@ -33,10 +33,16 @@
 
 
 Function CreateGSAToggleTask($CorpNetworkName, $CorpPublicIP){
-    
+
     # PowerShell script
     $PSScript = @"
+`$AppName = "GSAToggle"
 `$IsCorpNetwork = `$false
+`$PublicIP = `$null
+`$NetworkName = `$null
+if(!([System.Diagnostics.EventLog]::SourceExists(`$AppName))) {
+        [System.Diagnostics.EventLog]::CreateEventSource(`$AppName, 'Application')
+}
 if ('$CorpNetworkName' -ne '') {
     `$CorpNetworks = '$CorpNetworkName' -split ','
     `$NetworkName = if ((Get-WinEvent -FilterHashtable @{Logname='Microsoft-Windows-NetworkProfile/Operational';Id=10000} -MaxEvents 1).message -match 'Name:\s*(.+)') { `$matches[1].Trim() } else { `$null }
@@ -49,17 +55,45 @@ if ('$CorpNetworkName' -ne '') {
 }
 if (-not `$IsCorpNetwork -and '$CorpPublicIP' -ne '') {
     `$CorpIPs = '$CorpPublicIP' -split ','
-    try { `$PublicIP = (Invoke-RestMethod -Uri 'http://api.ipify.org?format=text' -TimeoutSec 10).Trim() } catch { `$PublicIP = `$null }
+    try {
+        `$PublicIP = (Invoke-RestMethod -Uri 'https://ifconfig.me/ip' -TimeoutSec 10).Trim()
+    } catch {
+        Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Error" -EventId 1001 -Message `$(`$_.Exception.Message)
+        `$PublicIP = `$null
+    }
     if (`$PublicIP -and `$CorpIPs -contains `$PublicIP) {
         `$IsCorpNetwork = `$true
     }
 }
+Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1000 -Message "NetworkName: `$(`$NetworkName)`nPublicIP: `$(`$PublicIP)`nIsCorpNetwork: `$(`$IsCorpNetwork)"
+`$timeout = [TimeSpan]::FromSeconds(15)
 if (`$IsCorpNetwork) {
-    Stop-Service GlobalSecureAccessTunnelingService -force
+    foreach (`$svcName in @('GlobalSecureAccessTunnelingService','GlobalSecureAccessEngineService')) {
+        try {
+            Stop-Service `$svcName -Force -ErrorAction Stop
+            `$svc = Get-Service -Name `$svcName
+            `$svc.WaitForStatus('Stopped', `$timeout)
+            `$final = Get-Service -Name `$svcName
+            Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1200 -Message "`$svcName `$(`$final.Status)"
+        } catch {
+            `$final = Get-Service -Name `$svcName
+            Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Error" -EventId 1201 -Message "`$svcName `$(`$final.Status)"
+        }
+    }
     exit
 }
-Start-Service GlobalSecureAccessTunnelingService
-Start-Service GlobalSecureAccessEngineService
+foreach (`$svcName in @('GlobalSecureAccessEngineService','GlobalSecureAccessTunnelingService')) {
+    try {
+        Start-Service -Name `$svcName -ErrorAction Stop
+        `$svc = Get-Service -Name `$svcName
+        `$svc.WaitForStatus('Running', `$timeout)
+        `$final = Get-Service -Name `$svcName
+        Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1100 -Message "`$svcName `$(`$final.Status)"
+    } catch {
+        `$final = Get-Service -Name `$svcName
+        Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Error" -EventId 1101 -Message "`$svcName `$(`$final.Status)"
+    }
+}
 "@
 
     # Define the task action
@@ -92,7 +126,12 @@ Start-Service GlobalSecureAccessEngineService
     $task = New-ScheduledTask -Action $action -principal $Prin -Trigger $Trigger -Settings $settings
 
     #Register the task
-    Register-ScheduledTask -TaskName $TaskName -InputObject $task -TaskPath "\Microsoft\GlobalSecureAccess\" -Force -ErrorAction SilentlyContinue
+    try {
+        Register-ScheduledTask -TaskName $TaskName -InputObject $task -TaskPath "\Microsoft\GlobalSecureAccess\" -Force -ErrorAction Stop
+        Write-Host "GSAToggle scheduled task registered successfully."
+    } catch {
+        Write-Error "Failed to register GSAToggle scheduled task: $_"
+    }
 
 }
 

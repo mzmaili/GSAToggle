@@ -2,7 +2,7 @@
 
 The **GSAToggle** script automates the management of the **Global Secure Access (GSA) Client** based on network location. When a device connects to the corporate network, GSA Client is automatically disabled to allow direct access to resources. When the device disconnects from the corporate network, GSA Client is automatically re-enabled to maintain secure remote connectivity — all without user intervention.
 
-# What challenge GSAToggle solves
+## What challenge GSAToggle solves
 
 There are scenarios where organizations using Global Secure Access require the flexibility to bypass GSA for direct access to the Internet, Microsoft 365, and private applications when users are on the corporate network, while ensuring traffic is routed through GSA when users are working remotely. Managing this transition manually is operationally complex and error-prone. The **GSAToggle** script addresses this challenge by providing an automated, event-driven solution that toggles GSA Client based on network connectivity.
 
@@ -26,7 +26,7 @@ Upon triggering, the task waits 5 seconds to allow the event to fully propagate,
 | Method | Parameter | Description |
 | --- | --- | --- |
 | **Network name** | `$CorpNetworkName` | Matches the connected network name from the Event 10000 log entry against a configured list of corporate network names. |
-| **Public IP** | `$CorpPublicIP` | Resolves the device's public IP via `http://api.ipify.org` and compares it against a configured list of corporate public IP addresses. |
+| **Public IP** | `$CorpPublicIP` | Resolves the device's public IP via `https://ifconfig.me/ip` and compares it against a configured list of corporate public IP addresses. |
 
 Configure at least one method. Both can be used together — the network name is checked first, and the public IP check runs only if the name does not match.
 
@@ -34,14 +34,29 @@ Configure at least one method. Both can be used together — the network name is
 
 | Location | Action |
 | --- | --- |
-| **On corporate network** | Stops `GlobalSecureAccessTunnelingService` and `GlobalSecureAccessEngineService` (disables GSA). |
-| **Off corporate network** | Starts `GlobalSecureAccessTunnelingService` and `GlobalSecureAccessEngineService` (enables GSA). |
+| **On corporate network** | Stops `GlobalSecureAccessTunnelingService` first, then `GlobalSecureAccessEngineService` (disables GSA). |
+| **Off corporate network** | Starts `GlobalSecureAccessEngineService` first, then `GlobalSecureAccessTunnelingService` (enables GSA). |
+
+Each service operation has a **15-second timeout** to wait for the expected status. The scheduled task itself has a **60-second execution time limit**.
+
+### Event logging
+
+The script logs all activity to the **Windows Application Event Log** under a custom source named **GSAToggle**.
+
+| Event ID | Type | Description |
+| --- | --- | --- |
+| 1000 | Information | Logs detected network name, public IP, and corporate network status on each trigger. |
+| 1001 | Error | Public IP resolution failed (e.g., `https://ifconfig.me/ip` unreachable). |
+| 1100 | Information | GSA service started successfully. |
+| 1101 | Error | GSA service failed to start. |
+| 1200 | Information | GSA service stopped successfully. |
+| 1201 | Error | GSA service failed to stop. |
 
 ## Prerequisites
 
 - Global Secure Access Client must be installed on the device.
 - The script must be executed with **Administrator** privileges (the scheduled task runs as SYSTEM).
-- If using the public IP detection method, outbound HTTPS access to `http://api.ipify.org` must be allowed.
+- If using the public IP detection method, outbound HTTPS access to `https://ifconfig.me/ip` must be allowed.
 - Intune license, if deploying the script via Microsoft Intune.
 
 ## How to use the script
