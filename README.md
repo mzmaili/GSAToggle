@@ -34,10 +34,10 @@ Configure at least one method. Both can be used together — the network name is
 
 | Location | Action |
 | --- | --- |
-| **On corporate network** | Stops `GlobalSecureAccessTunnelingService` first, then `GlobalSecureAccessEngineService` (disables GSA). |
-| **Off corporate network** | Starts `GlobalSecureAccessEngineService` first, then `GlobalSecureAccessTunnelingService` (enables GSA). |
+| **On corporate network** | Executes `GlobalSecureAccessStopServices.bat` from the GSA Client installation directory to disable GSA. |
+| **Off corporate network** | Executes `GlobalSecureAccessStartServices.bat` from the GSA Client installation directory to enable GSA. |
 
-Each service operation has a **15-second timeout** to wait for the expected status. The scheduled task itself has a **60-second execution time limit**.
+Both batch files are located under `%ProgramFiles%\Global Secure Access Client`. The scheduled task has a **60-second execution time limit**.
 
 ### Event logging
 
@@ -47,10 +47,10 @@ The script logs all activity to the **Windows Application Event Log** under a cu
 | --- | --- | --- |
 | 1000 | Information | Logs detected network name, public IP, and corporate network status on each trigger. |
 | 1001 | Error | Public IP resolution failed (e.g., `https://ifconfig.me/ip` unreachable). |
-| 1100 | Information | GSA service started successfully. |
-| 1101 | Error | GSA service failed to start. |
-| 1200 | Information | GSA service stopped successfully. |
-| 1201 | Error | GSA service failed to stop. |
+| 1100 | Information | `GlobalSecureAccessStartServices.bat` executed successfully (includes exit code). |
+| 1101 | Error | `GlobalSecureAccessStartServices.bat` failed to execute. |
+| 1200 | Information | `GlobalSecureAccessStopServices.bat` executed successfully (includes exit code). |
+| 1201 | Error | `GlobalSecureAccessStopServices.bat` failed to execute. |
 
 ## Prerequisites
 

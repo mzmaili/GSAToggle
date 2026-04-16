@@ -1,7 +1,7 @@
 ﻿<#
 
 .SYNOPSIS
-    GSAToggle V2.0 PowerShell script.
+    GSAToggle V2.1 PowerShell script.
 
 .DESCRIPTION
     There are rare/corner cases where organizations using Global Secure Access (GSA) require the flexibility to bypass GSA for direct access to the Internet, Microsoft 365, and private applications when users are connected to the corporate network, while ensuring these same applications remain accessible through GSA when users are working remotely. 
@@ -66,33 +66,23 @@ if (-not `$IsCorpNetwork -and '$CorpPublicIP' -ne '') {
     }
 }
 Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1000 -Message "NetworkName: `$(`$NetworkName)`nPublicIP: `$(`$PublicIP)`nIsCorpNetwork: `$(`$IsCorpNetwork)"
-`$timeout = [TimeSpan]::FromSeconds(15)
+`$gsaPath = "`$(`$env:ProgramFiles)\Global Secure Access Client"
 if (`$IsCorpNetwork) {
-    foreach (`$svcName in @('GlobalSecureAccessTunnelingService','GlobalSecureAccessEngineService')) {
-        try {
-            Stop-Service `$svcName -Force -ErrorAction Stop
-            `$svc = Get-Service -Name `$svcName
-            `$svc.WaitForStatus('Stopped', `$timeout)
-            `$final = Get-Service -Name `$svcName
-            Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1200 -Message "`$svcName `$(`$final.Status)"
-        } catch {
-            `$final = Get-Service -Name `$svcName
-            Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Error" -EventId 1201 -Message "`$svcName `$(`$final.Status)"
-        }
+    `$batFile = Join-Path `$gsaPath 'GlobalSecureAccessStopServices.bat'
+    try {
+        `$result = Start-Process -FilePath `$batFile -Wait -PassThru -NoNewWindow -ErrorAction Stop
+        Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1200 -Message "Executed GlobalSecureAccessStopServices.bat (ExitCode: `$(`$result.ExitCode))"
+    } catch {
+        Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Error" -EventId 1201 -Message "Failed to execute GlobalSecureAccessStopServices.bat: `$(`$_.Exception.Message)"
     }
     exit
 }
-foreach (`$svcName in @('GlobalSecureAccessEngineService','GlobalSecureAccessTunnelingService')) {
-    try {
-        Start-Service -Name `$svcName -ErrorAction Stop
-        `$svc = Get-Service -Name `$svcName
-        `$svc.WaitForStatus('Running', `$timeout)
-        `$final = Get-Service -Name `$svcName
-        Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1100 -Message "`$svcName `$(`$final.Status)"
-    } catch {
-        `$final = Get-Service -Name `$svcName
-        Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Error" -EventId 1101 -Message "`$svcName `$(`$final.Status)"
-    }
+`$batFile = Join-Path `$gsaPath 'GlobalSecureAccessStartServices.bat'
+try {
+    `$result = Start-Process -FilePath `$batFile -Wait -PassThru -NoNewWindow -ErrorAction Stop
+    Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Information" -EventId 1100 -Message "Executed GlobalSecureAccessStartServices.bat (ExitCode: `$(`$result.ExitCode))"
+} catch {
+    Write-EventLog -LogName "Application" -Source `$AppName -EntryType "Error" -EventId 1101 -Message "Failed to execute GlobalSecureAccessStartServices.bat: `$(`$_.Exception.Message)"
 }
 "@
 
